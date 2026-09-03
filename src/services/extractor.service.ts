@@ -37,18 +37,23 @@ const resolveYtDlpBinary = (): string => {
 
 const ytClient = createYtDlp(resolveYtDlpBinary());
 
+// Base flags to avoid bot detection and platform blocks on cloud datacenter IPs
+const BASE_EXTRACTOR_ARGS =
+  'youtube:player_client=android,web;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com';
+
+const getBaseFlags = (): any => ({
+  noWarnings: true,
+  noCheckCertificates: true,
+  preferFreeFormats: true,
+  extractorArgs: BASE_EXTRACTOR_ARGS,
+});
+
 export const extractorService = {
   async getMediaInfo(url: string) {
     try {
       const flags: any = {
+        ...getBaseFlags(),
         dumpJson: true,
-        noWarnings: true,
-        noCheckCertificates: true,
-        preferFreeFormats: true,
-        addHeader: [
-          'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'accept-language:en-US,en;q=0.9',
-        ],
       };
       const info = await ytClient(url, flags);
 
@@ -102,9 +107,9 @@ export const extractorService = {
       }
 
       const flags: any = {
+        ...getBaseFlags(),
         output: outputTemplate,
         format: format,
-        noWarnings: true,
       };
 
       if (job.type === 'audio') {
@@ -181,9 +186,9 @@ export const extractorService = {
     }
 
     const flags: any = {
+      ...getBaseFlags(),
       output: '-', // Stream to stdout
       format: ytdlpFormat,
-      noWarnings: true,
       quiet: true, // Reduce logs polluting stdout
     };
 

@@ -14,6 +14,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust reverse proxy (Railway, Vercel, Cloudflare)
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(
   helmet({
@@ -54,6 +57,7 @@ const apiLimiter = rateLimit({
   max: parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30'),
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });
 app.use('/api/', apiLimiter);
 
