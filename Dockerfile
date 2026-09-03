@@ -9,6 +9,7 @@ RUN apt-get update && \
         build-essential \
         curl \
         ca-certificates && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
 # Install standalone yt-dlp binary globally
