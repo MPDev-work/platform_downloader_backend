@@ -43,7 +43,9 @@ const COOKIES_PATH = path.join(process.cwd(), 'cookies.txt');
 if (process.env.YOUTUBE_COOKIES) {
   try {
     fs.writeFileSync(COOKIES_PATH, process.env.YOUTUBE_COOKIES, 'utf8');
-    console.log('YouTube cookies loaded successfully from environment variable.');
+    console.log(
+      'YouTube cookies loaded successfully from environment variable.',
+    );
   } catch (e) {
     console.error('Failed to write cookies.txt from environment variable:', e);
   }
@@ -84,11 +86,14 @@ export const extractorService = {
       const errMsg = error?.stderr || error?.message || '';
       // If YouTube blocked the cloud IP with bot check, fallback to the Android client
       if (errMsg.includes('Sign in to confirm') || errMsg.includes('bot')) {
-        console.log('Bot challenge detected for YouTube, retrying with Android client fallback...');
+        console.log(
+          'Bot challenge detected for YouTube, retrying with Android client fallback...',
+        );
         const fallbackFlags: any = {
           ...getBaseFlags(),
           dumpJson: true,
-          extractorArgs: 'youtube:player_client=android;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com',
+          extractorArgs:
+            'youtube:player_client=android;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com',
         };
         const info = await ytClient(url, fallbackFlags);
         parsed = typeof info === 'string' ? JSON.parse(info) : info;
@@ -101,24 +106,24 @@ export const extractorService = {
       }
     }
 
-      return {
-        platform: parsed.extractor,
-        title: parsed.title,
-        thumbnail: parsed.thumbnail,
-        duration: parsed.duration,
-        author: parsed.uploader || parsed.creator || parsed.channel,
-        formats: parsed.formats?.map((f: any) => ({
-          format_id: f.format_id,
-          ext: f.ext,
-          resolution: f.resolution,
-          filesize: f.filesize,
-          vcodec: f.vcodec,
-          acodec: f.acodec,
-          quality: f.format_note || f.height ? `${f.height}p` : 'audio',
-        })),
-        raw: parsed,
-      };
-    },
+    return {
+      platform: parsed.extractor,
+      title: parsed.title,
+      thumbnail: parsed.thumbnail,
+      duration: parsed.duration,
+      author: parsed.uploader || parsed.creator || parsed.channel,
+      formats: parsed.formats?.map((f: any) => ({
+        format_id: f.format_id,
+        ext: f.ext,
+        resolution: f.resolution,
+        filesize: f.filesize,
+        vcodec: f.vcodec,
+        acodec: f.acodec,
+        quality: f.format_note || f.height ? `${f.height}p` : 'audio',
+      })),
+      raw: parsed,
+    };
+  },
 
   async processJob(jobId: string) {
     const job = jobService.getJob(jobId);
@@ -129,15 +134,16 @@ export const extractorService = {
     const outputTemplate = path.join(TEMP_DIR, `${jobId}.%(ext)s`);
 
     try {
-      let format = 'bestvideo+bestaudio/best';
+      let format =
+        'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo+bestaudio/best';
 
       if (job.type === 'audio') {
         format = 'bestaudio/best';
       } else {
         if (job.quality !== 'best') {
-          // Match specific quality, or best fallback
+          // Prioritize H.264 / AVC up to requested height for universal playback
           const targetHeight = job.quality.replace('p', '');
-          format = `bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`;
+          format = `bestvideo[vcodec^=avc1][height<=${targetHeight}]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=${targetHeight}]+bestaudio/bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`;
         }
       }
 
@@ -177,12 +183,16 @@ export const extractorService = {
       } catch (procErr: any) {
         const errMsg = procErr?.stderr || procErr?.message || '';
         if (errMsg.includes('Sign in to confirm') || errMsg.includes('bot')) {
-          console.log(`Job ${jobId} hit bot challenge, retrying download with Android client fallback...`);
+          console.log(
+            `Job ${jobId} hit bot challenge, retrying download with Android client fallback...`,
+          );
           const fallbackFlags: any = {
             ...flags,
             extractorArgs:
               'youtube:player_client=android;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com',
-            format: 'bestvideo+bestaudio/best',
+            format:
+              'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo+bestaudio/best',
+            mergeOutputFormat: 'mp4',
           };
           await ytClient.exec(job.url, fallbackFlags);
         } else {
@@ -226,13 +236,15 @@ export const extractorService = {
     format: string;
     res: any;
   }) {
-    let ytdlpFormat = 'bestvideo+bestaudio/best';
+    let ytdlpFormat =
+      'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo+bestaudio/best';
 
     if (type === 'audio') {
       ytdlpFormat = 'bestaudio/best';
     } else {
       if (quality !== 'best') {
-        ytdlpFormat = `bestvideo[height<=${quality.replace('p', '')}]+bestaudio/best`;
+        const targetHeight = quality.replace('p', '');
+        ytdlpFormat = `bestvideo[vcodec^=avc1][height<=${targetHeight}]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=${targetHeight}]+bestaudio/bestvideo[height<=${targetHeight}]+bestaudio/best`;
       }
     }
 
