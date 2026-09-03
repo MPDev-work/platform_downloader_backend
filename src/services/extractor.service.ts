@@ -37,30 +37,69 @@ const resolveYtDlpBinary = (): string => {
 
 const ytClient = createYtDlp(resolveYtDlpBinary());
 
-// Base flags to avoid bot detection and platform blocks on cloud datacenter IPs
+const COOKIES_PATH = path.join(process.cwd(), 'cookies.txt');
+
+// Initialize cookies file from environment variable if provided
+if (process.env.YOUTUBE_COOKIES) {
+  try {
+    fs.writeFileSync(COOKIES_PATH, process.env.YOUTUBE_COOKIES, 'utf8');
+    console.log('YouTube cookies loaded successfully from environment variable.');
+  } catch (e) {
+    console.error('Failed to write cookies.txt from environment variable:', e);
+  }
+}
+
 // Base flags to avoid bot detection and unlock full 4K/HD streaming formats
 const BASE_EXTRACTOR_ARGS =
-  'youtube:player_client=android,web;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com';
-('tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com;youtube:player_client=visionos,web,mweb');
+  'tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com;youtube:player_client=visionos,web,mweb';
 
-const getBaseFlags = (): any => ({
-  noWarnings: true,
-  noCheckCertificates: true,
-  preferFreeFormats: true,
-  jsRuntimes: 'node',
-  extractorArgs: BASE_EXTRACTOR_ARGS,
-});
+const getBaseFlags = (): any => {
+  const flags: any = {
+    noWarnings: true,
+    noCheckCertificates: true,
+    preferFreeFormats: true,
+    jsRuntimes: 'node',
+    extractorArgs: BASE_EXTRACTOR_ARGS,
+  };
+
+  if (fs.existsSync(COOKIES_PATH)) {
+    flags.cookies = COOKIES_PATH;
+  }
+
+  return flags;
+};
 
 export const extractorService = {
   async getMediaInfo(url: string) {
+    let parsed: any = null;
+
     try {
       const flags: any = {
         ...getBaseFlags(),
         dumpJson: true,
       };
       const info = await ytClient(url, flags);
-
-      const parsed = typeof info === 'string' ? JSON.parse(info) : info;
+      parsed = typeof info === 'string' ? JSON.parse(info) : info;
+    } catch (error: any) {
+      const errMsg = error?.stderr || error?.message || '';
+      // If YouTube blocked the cloud IP with bot check, fallback to the Android client
+      if (errMsg.includes('Sign in to confirm') || errMsg.includes('bot')) {
+        console.log('Bot challenge detected for YouTube, retrying with Android client fallback...');
+        const fallbackFlags: any = {
+          ...getBaseFlags(),
+          dumpJson: true,
+          extractorArgs: 'youtube:player_client=android;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com',
+        };
+        const info = await ytClient(url, fallbackFlags);
+        parsed = typeof info === 'string' ? JSON.parse(info) : info;
+      } else {
+        console.error('Error fetching media info:', error);
+        throw new Error(
+          errMsg ||
+            'Unable to retrieve media information. Please check the URL and try again.',
+        );
+      }
+    }
 
       return {
         platform: parsed.extractor,
@@ -79,15 +118,7 @@ export const extractorService = {
         })),
         raw: parsed,
       };
-    } catch (error: any) {
-      console.error('Error fetching media info:', error);
-      const detail =
-        error?.stderr ||
-        error?.message ||
-        'Unable to retrieve media information. Please check the URL and try again.';
-      throw new Error(detail);
-    }
-  },
+    },
 
   async processJob(jobId: string) {
     const job = jobService.getJob(jobId);
@@ -141,7 +172,23 @@ export const extractorService = {
         }
       }, 2000);
 
-      await subprocess;
+      try {
+        await subprocess;
+      } catch (procErr: any) {
+        const errMsg = procErr?.stderr || procErr?.message || '';
+        if (errMsg.includes('Sign in to confirm') || errMsg.includes('bot')) {
+          console.log(`Job ${jobId} hit bot challenge, retrying download with Android client fallback...`);
+          const fallbackFlags: any = {
+            ...flags,
+            extractorArgs:
+              'youtube:player_client=android;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com',
+            format: 'bestvideo+bestaudio/best',
+          };
+          await ytClient.exec(job.url, fallbackFlags);
+        } else {
+          throw procErr;
+        }
+      }
       clearInterval(interval);
 
       // Find the created file

@@ -92,7 +92,10 @@ app.get('/api/files/:filename', (req, res) => {
   const jobId = filename.split('.')[0];
   const job = jobService.getJob(jobId);
   const rawExt = path.extname(filename);
-  const safeExt = rawExt && rawExt.startsWith('.') ? rawExt.toLowerCase() : `.${job?.format || 'mp4'}`;
+  const safeExt =
+    rawExt && rawExt.startsWith('.')
+      ? rawExt.toLowerCase()
+      : `.${job?.format || 'mp4'}`;
 
   // Safe filename cleanup that preserves Unicode characters (Khmer, Asian, accents, etc.)
   let cleanTitle = (job?.title || '')
