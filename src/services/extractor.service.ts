@@ -1,4 +1,4 @@
-import ytDlp from 'yt-dlp-exec';
+import ytDlp, { exec as ytDlpExec } from 'yt-dlp-exec';
 import path from 'path';
 import fs from 'fs';
 import { Job, jobService } from './job.service';
@@ -11,12 +11,12 @@ if (!fs.existsSync(TEMP_DIR)) {
 export const extractorService = {
   async getMediaInfo(url: string) {
     try {
-      const info = await ytDlp(url, {
+      const flags: any = {
         dumpJson: true,
         noWarnings: true,
-        noCallHome: true,
-        noCheckCertificate: true,
-      });
+        noCheckCertificates: true,
+      };
+      const info = await ytDlp(url, flags);
 
       const parsed = typeof info === 'string' ? JSON.parse(info) : info;
 
@@ -80,7 +80,7 @@ export const extractorService = {
         flags.mergeOutputFormat = 'mp4';
       }
 
-      const subprocess = ytDlp.exec(job.url, flags);
+      const subprocess = ytDlpExec(job.url, flags);
 
       // Simulate progress for now, yt-dlp-exec progress parsing is complex without callbacks
       // We will just wait for completion
@@ -160,7 +160,7 @@ export const extractorService = {
       flags.mergeOutputFormat = 'mp4';
     }
 
-    const subprocess = ytDlp.exec(url, flags);
+    const subprocess = ytDlpExec(url, flags);
 
     return new Promise((resolve, reject) => {
       if (subprocess.stdout) {
@@ -169,7 +169,7 @@ export const extractorService = {
         reject(new Error('Failed to get stdout from yt-dlp'));
       }
 
-      subprocess.on('close', (code) => {
+      subprocess.on('close', (code: number | null) => {
         if (code === 0) {
           resolve(true);
         } else {
@@ -177,7 +177,7 @@ export const extractorService = {
         }
       });
 
-      subprocess.on('error', (err) => {
+      subprocess.on('error', (err: any) => {
         reject(err);
       });
 

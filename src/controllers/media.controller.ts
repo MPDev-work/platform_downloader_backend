@@ -25,11 +25,9 @@ export const mediaController = {
         res.status(400).json({ error: 'Invalid URL provided' });
         return;
       }
-      res
-        .status(400)
-        .json({
-          error: error.message || 'Failed to retrieve media information',
-        });
+      res.status(400).json({
+        error: error.message || 'Failed to retrieve media information',
+      });
     }
   },
 
@@ -66,7 +64,7 @@ export const mediaController = {
 
   async getJobStatus(req: Request, res: Response): Promise<void> {
     try {
-      const { jobId } = req.params;
+      const jobId = req.params.jobId as string;
       const job = jobService.getJob(jobId);
 
       if (!job) {

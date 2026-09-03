@@ -15,12 +15,35 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }),
+);
+
+const configuredFrontendUrl = (
+  process.env.FRONTEND_URL || 'https://platform-downloader-frontend.vercel.app'
+).replace(/\/$/, '');
+
 app.use(
   cors({
-    origin:
-      process.env.FRONTEND_URL ||
-      'https://platform-downloader-frontend.vercel.app/',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like direct browser downloads, curl, server-to-server)
+      if (!origin) return callback(null, true);
+
+      // Allow configured frontend, local dev, or vercel deployments
+      if (
+        origin === configuredFrontendUrl ||
+        origin === 'http://localhost:5173' ||
+        origin === 'http://localhost:3000' ||
+        origin.endsWith('.vercel.app')
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
   }),
 );
 app.use(express.json());
