@@ -1,20 +1,35 @@
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
-# Install FFmpeg and Python3 (required by yt-dlp)
+# Install system dependencies: FFmpeg, Python 3, build tools, curl, ca-certificates
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg python3 && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        python3 \
+        python-is-python3 \
+        build-essential \
+        curl \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
+
+# Install standalone yt-dlp binary globally
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp
 
 WORKDIR /app
 
 # Copy dependency manifests
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install all dependencies (force inclusion of dev packages even if NODE_ENV=production)
+RUN npm install --include=dev
 
-# Copy source code and build configuration
+# Copy application source code
 COPY . .
+
+# Ensure yt-dlp is placed where yt-dlp-exec expects it
+RUN mkdir -p /app/node_modules/yt-dlp-exec/bin && \
+    cp /usr/local/bin/yt-dlp /app/node_modules/yt-dlp-exec/bin/yt-dlp && \
+    chmod a+rx /app/node_modules/yt-dlp-exec/bin/yt-dlp
 
 # Build TypeScript to Javascript (/dist)
 RUN npm run build
@@ -25,5 +40,5 @@ EXPOSE 3000
 ENV PORT=3000
 ENV NODE_ENV=production
 
-# Start compiled application with Node directly (low memory, high performance)
+# Start compiled application directly with Node
 CMD ["node", "dist/server.js"]
