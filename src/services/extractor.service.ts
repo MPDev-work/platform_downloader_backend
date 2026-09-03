@@ -123,7 +123,6 @@ export const extractorService = {
           job.quality === 'best' ? '0' : job.quality.replace(' kbps', '');
       } else if (job.format === 'mp4') {
         flags.mergeOutputFormat = 'mp4';
-        flags.format = 'bestvideo[vcodec^=avc1]+bestaudio/best[vcodec^=avc1]';
       }
 
       const subprocess = ytClient.exec(job.url, flags);
