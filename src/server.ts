@@ -91,18 +91,30 @@ app.get('/api/files/:filename', (req, res) => {
 
   const jobId = filename.split('.')[0];
   const job = jobService.getJob(jobId);
-  const ext = path.extname(filename);
+  const rawExt = path.extname(filename);
+  const safeExt = rawExt && rawExt.startsWith('.') ? rawExt.toLowerCase() : `.${job?.format || 'mp4'}`;
 
-  if (job && job.title) {
-    // Sanitize title to avoid issues with filename
-    const sanitizedTitle = job.title
-      .replace(/[^\w\s-]/g, '')
-      .trim()
-      .substring(0, 100);
-    return res.download(filePath, `${sanitizedTitle}${ext}`);
+  // Safe filename cleanup that preserves Unicode characters (Khmer, Asian, accents, etc.)
+  let cleanTitle = (job?.title || '')
+    .replace(/[/\\?%*:|"<>]/g, '')
+    .trim()
+    .substring(0, 100);
+
+  if (!cleanTitle) {
+    cleanTitle = `${job?.platform || 'video'}_${jobId.substring(0, 8)}`;
   }
 
-  res.download(filePath);
+  const downloadFilename = `${cleanTitle}${safeExt}`;
+  const isAudio = safeExt === '.mp3' || job?.type === 'audio';
+  const mimeType = isAudio ? 'audio/mpeg' : 'video/mp4';
+
+  res.setHeader('Content-Type', mimeType);
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${encodeURIComponent(downloadFilename)}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`,
+  );
+
+  res.download(filePath, downloadFilename);
 });
 
 // Global error handling middleware
