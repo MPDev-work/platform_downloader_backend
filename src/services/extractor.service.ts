@@ -17,9 +17,9 @@ export const extractorService = {
         noCallHome: true,
         noCheckCertificate: true,
       });
-      
+
       const parsed = typeof info === 'string' ? JSON.parse(info) : info;
-      
+
       return {
         platform: parsed.extractor,
         title: parsed.title,
@@ -33,13 +33,15 @@ export const extractorService = {
           filesize: f.filesize,
           vcodec: f.vcodec,
           acodec: f.acodec,
-          quality: f.format_note || f.height ? `${f.height}p` : 'audio'
+          quality: f.format_note || f.height ? `${f.height}p` : 'audio',
         })),
-        raw: parsed
+        raw: parsed,
       };
     } catch (error) {
       console.error('Error fetching media info:', error);
-      throw new Error('Unable to retrieve media information. Please check the URL and try again.');
+      throw new Error(
+        'Unable to retrieve media information. Please check the URL and try again.',
+      );
     }
   },
 
@@ -48,12 +50,12 @@ export const extractorService = {
     if (!job) return;
 
     jobService.updateJob(jobId, { status: 'processing', progress: 10 });
-    
+
     const outputTemplate = path.join(TEMP_DIR, `${jobId}.%(ext)s`);
-    
+
     try {
       let format = 'bestvideo+bestaudio/best';
-      
+
       if (job.type === 'audio') {
         format = 'bestaudio/best';
       } else {
@@ -72,49 +74,68 @@ export const extractorService = {
       if (job.type === 'audio') {
         flags.extractAudio = true;
         flags.audioFormat = job.format; // e.g., mp3
-        flags.audioQuality = job.quality === 'best' ? '0' : job.quality.replace(' kbps', '');
+        flags.audioQuality =
+          job.quality === 'best' ? '0' : job.quality.replace(' kbps', '');
       } else if (job.format === 'mp4') {
         flags.mergeOutputFormat = 'mp4';
       }
 
       const subprocess = ytDlp.exec(job.url, flags);
-      
+
       // Simulate progress for now, yt-dlp-exec progress parsing is complex without callbacks
       // We will just wait for completion
-      
+
       const interval = setInterval(() => {
         const currentJob = jobService.getJob(jobId);
-        if (currentJob && currentJob.status === 'processing' && currentJob.progress < 90) {
-            jobService.updateJob(jobId, { progress: currentJob.progress + 5 });
+        if (
+          currentJob &&
+          currentJob.status === 'processing' &&
+          currentJob.progress < 90
+        ) {
+          jobService.updateJob(jobId, { progress: currentJob.progress + 5 });
         }
       }, 2000);
 
       await subprocess;
       clearInterval(interval);
-      
+
       // Find the created file
       const files = fs.readdirSync(TEMP_DIR);
-      const outputFile = files.find(f => f.startsWith(jobId));
-      
+      const outputFile = files.find((f) => f.startsWith(jobId));
+
       if (outputFile) {
-        jobService.updateJob(jobId, { 
-          status: 'completed', 
+        jobService.updateJob(jobId, {
+          status: 'completed',
           progress: 100,
-          downloadUrl: `/api/files/${outputFile}`
+          downloadUrl: `/api/files/${outputFile}`,
         });
       } else {
         throw new Error('Output file not found after processing');
       }
-
     } catch (error: any) {
       console.error(`Job ${jobId} failed:`, error);
-      jobService.updateJob(jobId, { status: 'failed', error: error.message || 'Processing failed' });
+      jobService.updateJob(jobId, {
+        status: 'failed',
+        error: error.message || 'Processing failed',
+      });
     }
   },
 
-  async streamMedia({ url, type, quality, format, res }: { url: string, type: string, quality: string, format: string, res: any }) {
+  async streamMedia({
+    url,
+    type,
+    quality,
+    format,
+    res,
+  }: {
+    url: string;
+    type: string;
+    quality: string;
+    format: string;
+    res: any;
+  }) {
     let ytdlpFormat = 'bestvideo+bestaudio/best';
-    
+
     if (type === 'audio') {
       ytdlpFormat = 'bestaudio/best';
     } else {
@@ -133,7 +154,8 @@ export const extractorService = {
     if (type === 'audio') {
       flags.extractAudio = true;
       flags.audioFormat = format; // e.g., mp3
-      flags.audioQuality = quality === 'best' ? '0' : quality.replace(' kbps', '');
+      flags.audioQuality =
+        quality === 'best' ? '0' : quality.replace(' kbps', '');
     } else if (format === 'mp4') {
       flags.mergeOutputFormat = 'mp4';
     }
@@ -158,11 +180,11 @@ export const extractorService = {
       subprocess.on('error', (err) => {
         reject(err);
       });
-      
+
       // Handle client disconnect
       res.on('close', () => {
         subprocess.kill('SIGKILL');
       });
     });
-  }
+  },
 };

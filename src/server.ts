@@ -16,9 +16,13 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173'
-}));
+app.use(
+  cors({
+    origin:
+      process.env.FRONTEND_URL ||
+      'https://platform-downloader-frontend.vercel.app/',
+  }),
+);
 app.use(express.json());
 
 // Rate limiting
@@ -39,22 +43,25 @@ import { jobService } from './services/job.service';
 app.get('/api/files/:filename', (req, res) => {
   const { filename } = req.params;
   const filePath = path.join(TEMP_DIR, filename);
-  
+
   // Basic path traversal protection
   if (!filePath.startsWith(TEMP_DIR) || !fs.existsSync(filePath)) {
     return res.status(404).send('File not found');
   }
-  
+
   const jobId = filename.split('.')[0];
   const job = jobService.getJob(jobId);
   const ext = path.extname(filename);
-  
+
   if (job && job.title) {
     // Sanitize title to avoid issues with filename
-    const sanitizedTitle = job.title.replace(/[^\w\s-]/g, '').trim().substring(0, 100);
+    const sanitizedTitle = job.title
+      .replace(/[^\w\s-]/g, '')
+      .trim()
+      .substring(0, 100);
     return res.download(filePath, `${sanitizedTitle}${ext}`);
   }
-  
+
   res.download(filePath);
 });
 

@@ -4,14 +4,14 @@ import { extractorService } from '../services/extractor.service';
 import { jobService } from '../services/job.service';
 
 const infoSchema = z.object({
-  url: z.string().url()
+  url: z.string().url(),
 });
 
 const downloadSchema = z.object({
   url: z.string().url(),
   type: z.enum(['video', 'audio']),
   quality: z.string(),
-  format: z.string()
+  format: z.string(),
 });
 
 export const mediaController = {
@@ -25,24 +25,28 @@ export const mediaController = {
         res.status(400).json({ error: 'Invalid URL provided' });
         return;
       }
-      res.status(400).json({ error: error.message || 'Failed to retrieve media information' });
+      res
+        .status(400)
+        .json({
+          error: error.message || 'Failed to retrieve media information',
+        });
     }
   },
 
   async download(req: Request, res: Response): Promise<void> {
     try {
       const { url, type, quality, format } = downloadSchema.parse(req.body);
-      
+
       // Determine platform
       const info = await extractorService.getMediaInfo(url);
-      
+
       const job = jobService.createJob({
         url,
         title: info.title,
         platform: info.platform,
         type,
         quality,
-        format
+        format,
       });
 
       // Start processing in background
@@ -54,7 +58,9 @@ export const mediaController = {
         res.status(400).json({ error: 'Invalid parameters provided' });
         return;
       }
-      res.status(400).json({ error: error.message || 'Failed to start download' });
+      res
+        .status(400)
+        .json({ error: error.message || 'Failed to start download' });
     }
   },
 
@@ -62,7 +68,7 @@ export const mediaController = {
     try {
       const { jobId } = req.params;
       const job = jobService.getJob(jobId);
-      
+
       if (!job) {
         res.status(404).json({ error: 'Job not found' });
         return;
@@ -72,7 +78,7 @@ export const mediaController = {
         status: job.status,
         progress: job.progress,
         downloadUrl: job.downloadUrl,
-        error: job.error
+        error: job.error,
       });
     } catch (error) {
       res.status(500).json({ error: 'Internal server error' });
@@ -82,7 +88,7 @@ export const mediaController = {
   async downloadDirect(req: Request, res: Response): Promise<void> {
     try {
       const { url, type, quality, format } = req.query;
-      
+
       if (!url || typeof url !== 'string') {
         res.status(400).json({ error: 'Invalid URL provided' });
         return;
@@ -90,14 +96,20 @@ export const mediaController = {
 
       // Determine platform and title
       const info = await extractorService.getMediaInfo(url);
-      
+
       // Clean title for filename (remove invalid characters)
-      const cleanTitle = (info.title || 'download').replace(/[/\\?%*:|"<>]/g, '-');
-      const ext = type === 'audio' ? (format || 'mp3') : 'mp4';
+      const cleanTitle = (info.title || 'download').replace(
+        /[/\\?%*:|"<>]/g,
+        '-',
+      );
+      const ext = type === 'audio' ? format || 'mp3' : 'mp4';
       const filename = `${cleanTitle}.${ext}`;
 
       // Set headers for file download
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(filename)}"`,
+      );
       if (type === 'audio') {
         res.setHeader('Content-Type', 'audio/mpeg'); // approximation
       } else {
@@ -110,16 +122,17 @@ export const mediaController = {
         type: (type as string) || 'video',
         quality: (quality as string) || 'best',
         format: (format as string) || 'mp4',
-        res
+        res,
       });
-
     } catch (error: any) {
       console.error('Direct download error:', error);
       if (!res.headersSent) {
-        res.status(400).json({ error: error.message || 'Failed to start download' });
+        res
+          .status(400)
+          .json({ error: error.message || 'Failed to start download' });
       } else {
         res.end();
       }
     }
-  }
+  },
 };

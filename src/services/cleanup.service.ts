@@ -6,23 +6,26 @@ import { TEMP_DIR } from './extractor.service';
 export const cleanupService = {
   start() {
     // Run every 10 minutes
-    setInterval(() => {
-      this.runCleanup();
-    }, 10 * 60 * 1000);
-    
+    setInterval(
+      () => {
+        this.runCleanup();
+      },
+      10 * 60 * 1000,
+    );
+
     // Run once on startup
     this.runCleanup();
   },
-  
+
   runCleanup() {
     console.log('Running cleanup cron...');
     const expiredJobs = jobService.getExpiredJobs();
-    
+
     for (const job of expiredJobs) {
       console.log(`Cleaning up expired job: ${job.id}`);
       try {
         if (!fs.existsSync(TEMP_DIR)) continue;
-        
+
         const files = fs.readdirSync(TEMP_DIR);
         for (const file of files) {
           if (file.startsWith(job.id)) {
@@ -31,11 +34,11 @@ export const cleanupService = {
             console.log(`Deleted file: ${filePath}`);
           }
         }
-        
+
         jobService.markExpired(job.id);
       } catch (error) {
         console.error(`Error cleaning up job ${job.id}:`, error);
       }
     }
-  }
+  },
 };
