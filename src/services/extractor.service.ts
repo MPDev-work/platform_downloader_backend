@@ -37,9 +37,11 @@ const resolveYtDlpBinary = (): string => {
 
 const ytClient = createYtDlp(resolveYtDlpBinary());
 
+// Base flags to avoid bot detection and platform blocks on cloud datacenter IPs
 // Base flags to avoid bot detection and unlock full 4K/HD streaming formats
 const BASE_EXTRACTOR_ARGS =
-  'tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com;youtube:player_client=visionos,web,mweb';
+  'youtube:player_client=android,web;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com';
+('tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com;youtube:player_client=visionos,web,mweb');
 
 const getBaseFlags = (): any => ({
   noWarnings: true,
@@ -121,6 +123,7 @@ export const extractorService = {
           job.quality === 'best' ? '0' : job.quality.replace(' kbps', '');
       } else if (job.format === 'mp4') {
         flags.mergeOutputFormat = 'mp4';
+        flags.format = 'bestvideo[vcodec^=avc1]+bestaudio/best[vcodec^=avc1]';
       }
 
       const subprocess = ytClient.exec(job.url, flags);
