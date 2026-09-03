@@ -42,7 +42,8 @@ const COOKIES_PATH = path.join(process.cwd(), 'cookies.txt');
 // Initialize cookies file from environment variable if provided
 if (process.env.YOUTUBE_COOKIES) {
   try {
-    fs.writeFileSync(COOKIES_PATH, process.env.YOUTUBE_COOKIES, 'utf8');
+    const formattedCookies = process.env.YOUTUBE_COOKIES.replace(/\\n/g, '\n');
+    fs.writeFileSync(COOKIES_PATH, formattedCookies, 'utf8');
     console.log(
       'YouTube cookies loaded successfully from environment variable.',
     );
