@@ -41,7 +41,7 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
+      return callback(null, false);
     },
     credentials: true,
   }),
@@ -87,6 +87,24 @@ app.get('/api/files/:filename', (req, res) => {
 
   res.download(filePath);
 });
+
+// Global error handling middleware
+app.use(
+  (
+    err: any,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    console.error('Unhandled server error:', err);
+    res.status(err.status || 500).json({
+      error:
+        typeof err === 'string'
+          ? err
+          : err.message || 'Internal server error occurred',
+    });
+  },
+);
 
 // Start cleanup cron
 cleanupService.start();
