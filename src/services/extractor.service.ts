@@ -1,4 +1,4 @@
-import ytDlp, { exec as ytDlpExec } from 'yt-dlp-exec';
+import { create as createYtDlp } from 'yt-dlp-exec';
 import path from 'path';
 import fs from 'fs';
 import { Job, jobService } from './job.service';
@@ -8,6 +8,32 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// Dynamically locate the yt-dlp executable
+const resolveYtDlpBinary = (): string => {
+  if (process.env.YOUTUBE_DL_PATH && fs.existsSync(process.env.YOUTUBE_DL_PATH)) {
+    return process.env.YOUTUBE_DL_PATH;
+  }
+  if (fs.existsSync('/usr/local/bin/yt-dlp')) {
+    return '/usr/local/bin/yt-dlp';
+  }
+  if (fs.existsSync('/usr/bin/yt-dlp')) {
+    return '/usr/bin/yt-dlp';
+  }
+  const localBin = path.join(
+    process.cwd(),
+    'node_modules',
+    'yt-dlp-exec',
+    'bin',
+    process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp',
+  );
+  if (fs.existsSync(localBin)) {
+    return localBin;
+  }
+  return 'yt-dlp';
+};
+
+const ytClient = createYtDlp(resolveYtDlpBinary());
+
 export const extractorService = {
   async getMediaInfo(url: string) {
     try {
@@ -15,8 +41,13 @@ export const extractorService = {
         dumpJson: true,
         noWarnings: true,
         noCheckCertificates: true,
+        preferFreeFormats: true,
+        addHeader: [
+          'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'accept-language:en-US,en;q=0.9',
+        ],
       };
-      const info = await ytDlp(url, flags);
+      const info = await ytClient(url, flags);
 
       const parsed = typeof info === 'string' ? JSON.parse(info) : info;
 
@@ -37,11 +68,13 @@ export const extractorService = {
         })),
         raw: parsed,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching media info:', error);
-      throw new Error(
-        'Unable to retrieve media information. Please check the URL and try again.',
-      );
+      const detail =
+        error?.stderr ||
+        error?.message ||
+        'Unable to retrieve media information. Please check the URL and try again.';
+      throw new Error(detail);
     }
   },
 
@@ -80,7 +113,7 @@ export const extractorService = {
         flags.mergeOutputFormat = 'mp4';
       }
 
-      const subprocess = ytDlpExec(job.url, flags);
+      const subprocess = ytClient.exec(job.url, flags);
 
       // Simulate progress for now, yt-dlp-exec progress parsing is complex without callbacks
       // We will just wait for completion
@@ -160,7 +193,7 @@ export const extractorService = {
       flags.mergeOutputFormat = 'mp4';
     }
 
-    const subprocess = ytDlpExec(url, flags);
+    const subprocess = ytClient.exec(url, flags);
 
     return new Promise((resolve, reject) => {
       if (subprocess.stdout) {

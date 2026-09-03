@@ -40,6 +40,7 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV NODE_ENV=production
+ENV YOUTUBE_DL_PATH=/usr/local/bin/yt-dlp
 
 # Start compiled application directly with Node
 CMD ["node", "dist/server.js"]
