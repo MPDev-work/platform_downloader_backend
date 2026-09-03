@@ -10,7 +10,10 @@ if (!fs.existsSync(TEMP_DIR)) {
 
 // Dynamically locate the yt-dlp executable
 const resolveYtDlpBinary = (): string => {
-  if (process.env.YOUTUBE_DL_PATH && fs.existsSync(process.env.YOUTUBE_DL_PATH)) {
+  if (
+    process.env.YOUTUBE_DL_PATH &&
+    fs.existsSync(process.env.YOUTUBE_DL_PATH)
+  ) {
     return process.env.YOUTUBE_DL_PATH;
   }
   if (fs.existsSync('/usr/local/bin/yt-dlp')) {
