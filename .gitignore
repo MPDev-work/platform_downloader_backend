@@ -24,7 +24,6 @@ dist-ssr
 *.sw?
 
 # Storage and environment
-temp/
 jobs.sqlite*
 .env
 .env.*
