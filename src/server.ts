@@ -57,6 +57,19 @@ const apiLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 
+// Health check and root route
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'MediaFetch Backend',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy' });
+});
+
 // Routes
 app.use('/api', apiRoutes);
 
