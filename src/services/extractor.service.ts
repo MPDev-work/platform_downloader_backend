@@ -1,7 +1,11 @@
 import { create as createYtDlp } from 'yt-dlp-exec';
 import path from 'path';
 import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { Job, jobService } from './job.service';
+
+const execFileAsync = promisify(execFile);
 
 export const TEMP_DIR = path.join(process.cwd(), 'temp');
 if (!fs.existsSync(TEMP_DIR)) {
@@ -71,6 +75,77 @@ const getBaseFlags = (): any => {
 
   return flags;
 };
+
+// Build a format string that prefers H.264/AVC at the requested height
+// (works reliably on iPhone/QuickTime/AVPlayer), falling back to
+// VP9/AV1 only when no AVC stream exists at that resolution.
+const buildVideoFormat = (
+  quality: string,
+  { avcOnly = false }: { avcOnly?: boolean } = {},
+): string => {
+  if (quality === 'best') {
+    return avcOnly
+      ? 'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo+bestaudio/best'
+      : 'bestvideo+bestaudio/best';
+  }
+
+  const targetHeight = parseInt(quality.replace('p', ''), 10);
+  if (isNaN(targetHeight)) {
+    return 'bestvideo+bestaudio/best';
+  }
+
+  return `bestvideo[vcodec^=avc1][height<=${targetHeight}]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=${targetHeight}]+bestaudio/bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`;
+};
+
+// --- iPhone compatibility helpers ---------------------------------------
+
+async function getVideoCodec(filePath: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=codec_name',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      filePath,
+    ]);
+    return stdout.trim();
+  } catch (e) {
+    console.error('ffprobe failed, skipping compat check:', e);
+    return null;
+  }
+}
+
+// If the downloaded video isn't H.264/HEVC (e.g. VP9/AV1 forced above
+// 1080p), transcode it so it actually plays on iPhone. Returns the
+// final file path (unchanged if no transcode was needed).
+async function ensureIphoneCompatible(filePath: string): Promise<string> {
+  const codec = await getVideoCodec(filePath);
+
+  if (!codec) return filePath; // ffprobe unavailable/failed — don't block the job
+  if (codec === 'h264' || codec === 'hevc') return filePath;
+
+  console.log(`Transcoding ${path.basename(filePath)} (${codec} -> h264) for iPhone compatibility...`);
+
+  const outPath = filePath.replace(/\.\w+$/, '.compat.mp4');
+  try {
+    await execFileAsync('ffmpeg', [
+      '-y',
+      '-i', filePath,
+      '-c:v', 'libx264',
+      '-preset', 'medium',
+      '-crf', '20',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-movflags', '+faststart',
+      outPath,
+    ]);
+    fs.unlinkSync(filePath);
+    return outPath;
+  } catch (e) {
+    console.error('ffmpeg transcode failed, keeping original file:', e);
+    return filePath;
+  }
+}
 
 export const extractorService = {
   async getMediaInfo(url: string) {
@@ -142,16 +217,11 @@ export const extractorService = {
       if (job.type === 'audio') {
         format = 'bestaudio/best';
       } else {
-        if (job.quality !== 'best') {
-          const targetHeight = parseInt(job.quality.replace('p', ''), 10);
-          if (!isNaN(targetHeight) && targetHeight > 1080) {
-            // Above 1080p (1440p, 2160p 4K), YouTube only provides VP9/AV1
-            format = `bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`;
-          } else if (!isNaN(targetHeight)) {
-            // At 1080p and below, prioritize H.264 / AVC for universal compatibility
-            format = `bestvideo[vcodec^=avc1][height<=${targetHeight}]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=${targetHeight}]+bestaudio/bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`;
-          }
-        }
+        // Always try H.264 first, at ANY resolution, for iPhone/QuickTime
+        // compatibility. If YouTube truly has no AVC stream that high
+        // (common above ~1080p), this falls back to VP9/AV1 and the
+        // ensureIphoneCompatible() step below will transcode it afterward.
+        format = buildVideoFormat(job.quality);
       }
 
       const flags: any = {
@@ -198,7 +268,9 @@ export const extractorService = {
             extractorArgs:
               'youtube:player_client=android;tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com',
             format:
-              'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo+bestaudio/best',
+              job.type === 'audio'
+                ? format
+                : 'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo+bestaudio/best',
             mergeOutputFormat: 'mp4',
           };
           await ytClient.exec(job.url, fallbackFlags);
@@ -209,18 +281,25 @@ export const extractorService = {
       clearInterval(interval);
 
       // Find the created file
-      const files = fs.readdirSync(TEMP_DIR);
-      const outputFile = files.find((f) => f.startsWith(jobId));
+      let files = fs.readdirSync(TEMP_DIR);
+      let outputFile = files.find((f) => f.startsWith(jobId));
 
-      if (outputFile) {
-        jobService.updateJob(jobId, {
-          status: 'completed',
-          progress: 100,
-          downloadUrl: `/api/files/${outputFile}`,
-        });
-      } else {
+      if (!outputFile) {
         throw new Error('Output file not found after processing');
       }
+
+      // For video jobs, make sure the final codec actually plays on iPhone.
+      if (job.type !== 'audio') {
+        const fullPath = path.join(TEMP_DIR, outputFile);
+        const compatPath = await ensureIphoneCompatible(fullPath);
+        outputFile = path.basename(compatPath);
+      }
+
+      jobService.updateJob(jobId, {
+        status: 'completed',
+        progress: 100,
+        downloadUrl: `/api/files/${outputFile}`,
+      });
     } catch (error: any) {
       console.error(`Job ${jobId} failed:`, error);
       jobService.updateJob(jobId, {
@@ -243,20 +322,8 @@ export const extractorService = {
     format: string;
     res: any;
   }) {
-    let ytdlpFormat = 'bestvideo+bestaudio/best';
-
-    if (type === 'audio') {
-      ytdlpFormat = 'bestaudio/best';
-    } else {
-      if (quality !== 'best') {
-        const targetHeight = parseInt(quality.replace('p', ''), 10);
-        if (!isNaN(targetHeight) && targetHeight > 1080) {
-          ytdlpFormat = `bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`;
-        } else if (!isNaN(targetHeight)) {
-          ytdlpFormat = `bestvideo[vcodec^=avc1][height<=${targetHeight}]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=${targetHeight}]+bestaudio/bestvideo[height<=${targetHeight}]+bestaudio/best`;
-        }
-      }
-    }
+    let ytdlpFormat =
+      type === 'audio' ? 'bestaudio/best' : buildVideoFormat(quality);
 
     const flags: any = {
       ...getBaseFlags(),
@@ -274,6 +341,12 @@ export const extractorService = {
       flags.mergeOutputFormat = 'mp4';
     }
 
+    // NOTE: streaming directly to stdout means there's no file on disk to
+    // run ensureIphoneCompatible() against, so a VP9/AV1 fallback here can
+    // still produce a stream that won't play on iPhone. If that matters for
+    // your use case, prefer processJob (file-based) for iPhone clients, or
+    // pipe through `ffmpeg -i pipe:0 -c:v libx264 -c:a aac -f mp4 pipe:1`
+    // before writing to `res`.
     const subprocess = ytClient.exec(url, flags);
 
     return new Promise((resolve, reject) => {
