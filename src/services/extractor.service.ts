@@ -137,12 +137,17 @@ export const extractorService = {
     const outputTemplate = path.join(TEMP_DIR, `${jobId}.%(ext)s`);
 
     try {
+      let format =
+        'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo+bestaudio/best';
       let format = 'bestvideo+bestaudio/best';
 
       if (job.type === 'audio') {
         format = 'bestaudio/best';
       } else {
         if (job.quality !== 'best') {
+          // Prioritize H.264 / AVC up to requested height for universal playback
+          const targetHeight = job.quality.replace('p', '');
+          format = `bestvideo[vcodec^=avc1][height<=${targetHeight}]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=${targetHeight}]+bestaudio/bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`;
           const targetHeight = parseInt(job.quality.replace('p', ''), 10);
           if (!isNaN(targetHeight) && targetHeight > 1080) {
             // Above 1080p (1440p, 2160p 4K), YouTube only provides VP9/AV1
@@ -243,12 +248,16 @@ export const extractorService = {
     format: string;
     res: any;
   }) {
+    let ytdlpFormat =
+      'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo+bestaudio/best';
     let ytdlpFormat = 'bestvideo+bestaudio/best';
 
     if (type === 'audio') {
       ytdlpFormat = 'bestaudio/best';
     } else {
       if (quality !== 'best') {
+        const targetHeight = quality.replace('p', '');
+        ytdlpFormat = `bestvideo[vcodec^=avc1][height<=${targetHeight}]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=${targetHeight}]+bestaudio/bestvideo[height<=${targetHeight}]+bestaudio/best`;
         const targetHeight = parseInt(quality.replace('p', ''), 10);
         if (!isNaN(targetHeight) && targetHeight > 1080) {
           ytdlpFormat = `bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`;
