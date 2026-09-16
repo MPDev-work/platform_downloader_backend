@@ -12,6 +12,49 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// Dynamically locate FFmpeg and FFprobe executables
+const resolveFfmpegBinary = (): string => {
+  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
+    return process.env.FFMPEG_PATH;
+  }
+  try {
+    const ffmpegPath = require('ffmpeg-static');
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) {
+      return ffmpegPath;
+    }
+  } catch {}
+  if (fs.existsSync('/usr/bin/ffmpeg')) return '/usr/bin/ffmpeg';
+  if (fs.existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
+  return 'ffmpeg';
+};
+
+const resolveFfprobeBinary = (): string => {
+  if (process.env.FFPROBE_PATH && fs.existsSync(process.env.FFPROBE_PATH)) {
+    return process.env.FFPROBE_PATH;
+  }
+  try {
+    const ffprobe = require('ffprobe-static');
+    if (ffprobe?.path && fs.existsSync(ffprobe.path)) {
+      return ffprobe.path;
+    }
+  } catch {}
+  if (fs.existsSync('/usr/bin/ffprobe')) return '/usr/bin/ffprobe';
+  if (fs.existsSync('/usr/local/bin/ffprobe')) return '/usr/local/bin/ffprobe';
+  return 'ffprobe';
+};
+
+const FFMPEG_BIN = resolveFfmpegBinary();
+const FFPROBE_BIN = resolveFfprobeBinary();
+
+// Ensure ffmpeg directory is in PATH so child processes and yt-dlp find it
+if (fs.existsSync(FFMPEG_BIN)) {
+  const ffmpegDir = path.dirname(FFMPEG_BIN);
+  const pathSep = process.platform === 'win32' ? ';' : ':';
+  if (!process.env.PATH?.includes(ffmpegDir)) {
+    process.env.PATH = `${ffmpegDir}${pathSep}${process.env.PATH || ''}`;
+  }
+}
+
 // Dynamically locate the yt-dlp executable
 const resolveYtDlpBinary = (): string => {
   if (
@@ -67,6 +110,7 @@ const getBaseFlags = (): any => {
     preferFreeFormats: true,
     jsRuntimes: 'node',
     extractorArgs: BASE_EXTRACTOR_ARGS,
+    ffmpegLocation: FFMPEG_BIN,
   };
 
   if (fs.existsSync(COOKIES_PATH)) {
@@ -101,11 +145,15 @@ const buildVideoFormat = (
 
 async function getVideoCodec(filePath: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync('ffprobe', [
-      '-v', 'error',
-      '-select_streams', 'v:0',
-      '-show_entries', 'stream=codec_name',
-      '-of', 'default=noprint_wrappers=1:nokey=1',
+    const { stdout } = await execFileAsync(FFPROBE_BIN, [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=codec_name',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
       filePath,
     ]);
     return stdout.trim();
@@ -124,19 +172,28 @@ async function ensureIphoneCompatible(filePath: string): Promise<string> {
   if (!codec) return filePath; // ffprobe unavailable/failed — don't block the job
   if (codec === 'h264' || codec === 'hevc') return filePath;
 
-  console.log(`Transcoding ${path.basename(filePath)} (${codec} -> h264) for iPhone compatibility...`);
+  console.log(
+    `Transcoding ${path.basename(filePath)} (${codec} -> h264) for iPhone compatibility...`,
+  );
 
   const outPath = filePath.replace(/\.\w+$/, '.compat.mp4');
   try {
-    await execFileAsync('ffmpeg', [
+    await execFileAsync(FFMPEG_BIN, [
       '-y',
-      '-i', filePath,
-      '-c:v', 'libx264',
-      '-preset', 'medium',
-      '-crf', '20',
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-movflags', '+faststart',
+      '-i',
+      filePath,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      '20',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-movflags',
+      '+faststart',
       outPath,
     ]);
     fs.unlinkSync(filePath);
